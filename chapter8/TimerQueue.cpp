@@ -2,8 +2,10 @@
 #include "EventLoop.h"
 #include "Channel.h"
 #include "Timer.h"
+#include "Timestamp.h"
 
 #include <ctime>
+#include <iterator>
 #include <sys/timerfd.h>
 #include <unistd.h>
 #include <cstring>
@@ -22,7 +24,18 @@ namespace{
         return timerfd;
     }
 }
-std::vector<TimerQueue::Entry> TimerQueue::getExpired(TimePoint now){
+std::vector<TimerQueue::Entry> TimerQueue::getExpired(Timestamp now){
     std::vector<Entry> expired;
     
+    //构造一个极其特殊的 Entry，时间是 now，地址是内存里的最大值,这样可以把所有的 同一时刻，的所有任务取出来、
+    // 因为地址最大，直到之间大于now ，二分搜索才会停止.
+    Entry sentry(now,reinterpret_cast<Timer*>(UINTPTR_MAX));
+    auto end = timers_.lower_bound(sentry);
+    // end == timers_.end() 说明所有的闹钟都过期了。
+    // now < it.first 留下来的闹钟一定时间一定大于now
+    assert(end == timers_.end() || now < end->first);
+    //std::back_inserter 边拷贝,后台边扩容。
+    std::copy(timers_.begin(),end,std::back_inserter(expired));
+    timers_.erase(timers_.begin(),end);
+    return expired;
 }

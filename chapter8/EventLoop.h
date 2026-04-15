@@ -54,6 +54,7 @@ public:
 
     // 获取当前线程里的 EventLoop
     [[nodiscard]] static EventLoop* getEventLoopOfCurrentThread() noexcept;
+   
 
 private:
     [[noreturn]] void abortNotInLoopThread() const;
