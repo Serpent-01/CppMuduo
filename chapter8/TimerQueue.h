@@ -47,6 +47,9 @@ private:
     // 处理周期性定时器的重新入队，以及单次定时器的内存释放
     void reset(const std::vector<Entry>& expired, Timestamp now);
 
+    //重置底层定时器的唤醒时间
+    void resetTimerfd(int timerfd, Timestamp expiration);
+
     // 底层插入逻辑
     bool insert(Timer* timer);
 

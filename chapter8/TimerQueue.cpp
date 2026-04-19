@@ -5,7 +5,7 @@
 #include "Timestamp.h"
 
 #include <ctime>
-#include <iterator>
+
 #include <sys/timerfd.h>
 #include <unistd.h>
 #include <cstring>
@@ -39,3 +39,48 @@ std::vector<TimerQueue::Entry> TimerQueue::getExpired(Timestamp now){
     timers_.erase(timers_.begin(),end);
     return expired;
 }
+
+TimerId TimerQueue::addTimer(TimerCallback cb,Timestamp when,double interval){
+    //从TimerQueue 生成的流水号
+    uint64_t seq = nextId_.fetch_add(1);
+    //创建定时器实体
+    Timer* timer = new Timer(cb,when,interval,seq);
+    /*
+        外部业务线程随时可能调用 addTimer。为了绝对的线程安全，
+        我们必须把“把闹钟塞进红黑树”这个动作，打包扔给 EventLoop 所在的 IO 线程去执行！
+        addTimer只负责转发，交给 addTimerInLoop 完成修改定时器列表的工作
+        bind 的作用就是：把“函数 + 对象 + 参数”提前绑好，生成一个以后可以直接调用的无参任务对象。
+    */
+    //loop_->runInLoop(std::bind(&TimerQueue::addTimerInLoop,this,timer));
+    loop_->runInLoop([this,timer](){
+        this->addTimerInLoop(timer);
+    });
+    return TimerId(timer,seq);
+}
+/*
+    1、确保当前操作发生在 TimerQueue 所属的 loop 线程里
+    2、把新的定时器插入到内部有序容器里
+    3、如果这个新定时器变成了“最早到期的那个”，就更新 timerfd
+    为什么要更新 timerfd?
+    TimerQueue 内部一般会维护很多定时器，比如：
+    5 秒后执行
+    10 秒后执行
+    20 秒后执行
+    但内核那个 timerfd 一次只能代表“下一次什么时候响”。
+    所以它通常只设置成：当前所有定时器里，最早到期的那个时间点。
+*/
+void TimerQueue::addTimerInLoop(Timer* timer){
+    //判断是否是所属线程
+    loop_->assertInLoopThread();
+    // 把新定时器插入内部有序容器
+    // 返回值表示：这个新定时器是否成为了“当前最早到期的定时器”
+    bool earliestChanged = insert(timer);
+
+    // timerfd 只负责等待“最近一次到期事件”
+    // 如果新插入的 timer 变成了最早到期的那个，
+    // 就必须重新设置 timerfd 的触发时间
+    if(earliestChanged){
+        resetTimerfd(timerfd_, timer->expiration());
+    }
+}
+

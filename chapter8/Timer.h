@@ -73,7 +73,7 @@ private:
     // STL 哲学与底层铁律：不可变属性加 const 锁死
     const TimerCallback callback_;
     const double interval_;        // 时间间隔，连续两次闹钟响铃之间的时间差！(单位：秒)
-    const std::uint64_t sequence_; // 闹钟的灵魂编码，出生后绝对不可更改
+    const std::uint64_t sequence_; // 闹钟的流水号，相当于标识，出生后绝对不可更改
     
     // 绝对到期时间
     Timestamp expiration_;         // 唯一允许变化的变量（周期性闹钟每次响完会更新）
